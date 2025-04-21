@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Clicker Game</title>
+  <style>
+    body {
+      text-align: center;
+      font-family: sans-serif;
+      background: #f4f4f4;
+      margin-top: 100px;
+    }
+    button {
+      padding: 20px 40px;
+      font-size: 24px;
+      border: none;
+      border-radius: 10px;
+      background-color: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
+    h1 {
+      font-size: 48px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Clicks: <span id="count">0</span></h1>
+  <button onclick="increment()">Click me!</button>
+
+  <script>
+    let count = localStorage.getItem('clicks') || 0;
+    document.getElementById('count').innerText = count;
+
+    function increment() {
+      count++;
+      localStorage.setItem('clicks', count);
+      document.getElementById('count').innerText = count;
+    }
+
+    // Optional: send score to bot when user exits (Telegram API)
+  </script>
+</body>
+</html>
