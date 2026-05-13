@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>P2P Mobile Game</title>
+    <!-- Подключаем библиотеку через официальный CDN -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { margin: 0; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; background: #222; }
+        #ui { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; background: rgba(0,0,0,0.9); }
+        .menu-box { background: #333; padding: 25px; border-radius: 15px; text-align: center; width: 85%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input { width: 90%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 2px solid #444; background: #222; color: white; font-size: 16px; text-align: center; }
+        button { width: 100%; padding: 15px; margin: 8px 0; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.2s; }
+        .host-btn { background: #3498db; color: white; }
+        .join-btn { background: #2ecc71; color: white; }
+        #status { position: absolute; top: 15px; width: 100%; text-align: center; font-size: 14px; color: #2ecc71; font-weight: bold; }
+        .error { color: #e74c3c; margin-top: 10px; font-size: 13px; }
+        #id-display { font-size: 20px; color: #f1c40f; margin: 10px 0; word-break: break-all; }
+    </style>
+</head>
+<body>
+
+<div id="status"></div>
+
+<div id="ui">
+    <div class="menu-box">
+        <h2 style="margin-top:0;">2D P2P Battle</h2>
+        
+        <div id="setup-section">
+            <button class="host-btn" onclick="startHost()">СОЗДАТЬ ИГРУ</button>
+            <div style="margin: 15px 0; color: #888;">— ИЛИ —</div>
+            <input type="text" id="joinId" placeholder="Вставьте ID друга">
+            <button class="join-btn" onclick="startJoin()">ПОДКЛЮЧИТЬСЯ</button>
+            <div id="setup-error" class="error"></div>
+        </div>
+
+        <div id="lobby-section" style="display:none;">
+            <p>Ваш ID (нажмите, чтобы скопировать):</p>
+            <div id="id-display" onclick="copyId()">Загрузка...</div>
+            <p style="font-size: 12px; color: #888;">Ожидание подключения друга...</p>
+            <button onclick="location.reload()" style="background:#555; color:white;">Назад</button>
+        </div>
+    </div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const ui = document.getElementById('ui');
+    const status = document.getElementById('status');
+    const setupError = document.getElementById('setup-error');
+    
+    let peer, conn;
+    let isHost = false;
+    let gameActive = false;
+
+    const p1 = { x: 100, y: 100, color: '#3498db' }; 
+    const p2 = { x: 200, y: 200, color: '#2ecc71' }; 
+    let enemies = [];
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Инициализация PeerJS
+    function initPeer(callback) {
+        setupError.innerText = "Подключение к серверу...";
+        
+        // Создаем объект Peer
+        peer = new Peer(); 
+
+        peer.on('open', (id) => {
+            setupError.innerText = "";
+            document.getElementById('id-display').innerText = id;
+            if(callback) callback(id);
+        });
+
+        peer.on('error', (err) => {
+            console.error(err);
+            setupError.innerText = "Ошибка: " + err.type;
+            if(err.type === 'browser-incompatible') {
+                setupError.innerText = "Браузер не поддерживает P2P (нужен HTTPS)";
+            }
+        });
+
+        peer.on('connection', (connection) => {
+            conn = connection;
+            bindEvents();
+        });
+    }
+
+    function startHost() {
+        isHost = true;
+        document.getElementById('setup-section').style.display = 'none';
+        document.getElementById('lobby-section').style.display = 'block';
+        initPeer();
+    }
+
+    function startJoin() {
+        const targetId = document.getElementById('joinId').value.trim();
+        if (!targetId) return alert("Введите ID хоста!");
+        
+        isHost = false;
+        initPeer((myId) => {
+            conn = peer.connect(targetId);
+            bindEvents();
+        });
+    }
+
+    function bindEvents() {
+        conn.on('open', () => {
+            status.innerText = "СВЯЗЬ УСТАНОВЛЕНА";
+            ui.style.display = 'none';
+            gameActive = true;
+            if(isHost) spawnEnemy();
+            update();
+        });
+
+        conn.on('data', (data) => {
+            if (isHost) {
+                p2.x = data.x; p2.y = data.y;
+            } else {
+                p1.x = data.p1.x; p1.y = data.p1.y;
+                enemies = data.enemies;
+            }
+        });
+
+        conn.on('close', () => {
+            alert("Связь разорвана");
+            location.reload();
+        });
+    }
+
+    function copyId() {
+        const idText = document.getElementById('id-display').innerText;
+        navigator.clipboard.writeText(idText);
+        alert("ID скопирован!");
+    }
+
+    // --- Управление ---
+    function move(e) {
+        if (!gameActive) return;
+        const touch = e.touches ? e.touches[0] : e;
+        const target = isHost ? p1 : p2;
+        target.x = touch.clientX;
+        target.y = touch.clientY;
+
+        if (conn && conn.open) {
+            if (isHost) conn.send({ p1: {x: p1.x, y: p1.y}, enemies: enemies });
+            else conn.send({ x: p2.x, y: p2.y });
+        }
+    }
+
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); move(e); }, {passive: false});
+    canvas.addEventListener('mousemove', (e) => { if(e.buttons > 0) move(e); });
+
+    // --- Игровая логика ---
+    function spawnEnemy() {
+        if (!isHost || !gameActive) return;
+        enemies.push({
+            x: Math.random() * canvas.width,
+            y: -20,
+            speed: 2 + Math.random() * 2,
+            id: Math.random()
+        });
+        setTimeout(spawnEnemy, 1200);
+    }
+
+    function update() {
+        if (!gameActive) return;
+
+        if (isHost) {
+            enemies.forEach((en, i) => {
+                en.y += en.speed;
+                if (en.y > canvas.height + 50) enemies.splice(i, 1);
+            });
+            if (conn && conn.open) {
+                conn.send({ p1: {x: p1.x, y: p1.y}, enemies: enemies });
+            }
+        }
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = p1.color;
+        ctx.fillRect(p1.x - 15, p1.y - 15, 30, 30);
+        
+        ctx.fillStyle = p2.color;
+        ctx.fillRect(p2.x - 15, p2.y - 15, 30, 30);
+
+        ctx.fillStyle = '#ff4757';
+        enemies.forEach(en => {
+            ctx.beginPath();
+            ctx.arc(en.x, en.y, 12, 0, Math.PI*2);
+            ctx.fill();
+        });
+    }
+</script>
+</body>
+</html>
